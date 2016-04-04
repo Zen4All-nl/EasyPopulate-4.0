@@ -1,5 +1,5 @@
 <?php
-// $Id: easypopulate_4_import.php, v4.0.32 11-10-2015 mc12345678 $
+// $Id: easypopulate_4_import.php, v4.0.34a 03-29-2016 mc12345678 $
 
 if (!defined('IS_ADMIN_FLAG')) {
   die('Illegal Access');
@@ -770,6 +770,7 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
           // since we have a row, the item already exists.
           // let's check and delete it if requested   
           // v_status == 9 is a delete request  
+          $continueNextRow = false;
           if ($items[$filelayout['v_status']] == 9) {
             $chosen_key = '';
             switch (EP4_DB_FILTER_KEY) {
@@ -787,6 +788,13 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
 
             $display_output .= sprintf(EASYPOPULATE_4_DISPLAY_RESULT_DELETED, $items[$filelayout[$chosen_key]]);
             ep_4_remove_product($items[$filelayout[$chosen_key]]);
+
+            $continueNextRow = true;
+          }
+      
+          $zco_notifier->notify('EP4_IMPORT_FILE_EARLY_ROW_PROCESSING');
+
+          if ($continueNextRow == true) {
             continue 2; // short circuit - loop to next record
           }
 
@@ -1004,10 +1012,10 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
         // date variables - chadd ... these should really be products_date_available and products_date_added for clarity
         // date_avail is only set to show when out of stock items will be available, else it is NULL
         // 11-19-2010 fixed this bug where NULL wasn't being correctly set
-        $v_date_avail = ($v_date_avail) ? "'" . date("Y-m-d H:i:s", strtotime($v_date_avail)) . "'" : "NULL";
+        $v_date_avail = ($v_date_avail == true && $v_date_avail > "0001-01-01") ? date("Y-m-d H:i:s", strtotime($v_date_avail)) : "NULL";
 
         // if products has been added before, do not change, else use current time stamp
-        $v_date_added = ($v_date_added) ? "'" . date("Y-m-d H:i:s", strtotime($v_date_added)) . "'" : "CURRENT_TIMESTAMP";
+        $v_date_added = ($v_date_added == true & $v_date_added > "0001-01-01") ? date("Y-m-d H:i:s", strtotime($v_date_added)) : "CURRENT_TIMESTAMP";
 
         // default the stock if they spec'd it or if it's blank
         // $v_db_status = '1'; // default to active
@@ -1094,13 +1102,14 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
         }
         if ($categories_name_exists) { // we have at least 1 language column
           // chadd - 12-14-2010 - $categories_names_array[] has our category names
-          $categories_delimiter = "^"; // add this to configuration variables
+          // $categories_delimiter = "\x5e"; // add this to configuration variables
+          $categories_delimiter = $category_delimiter; // add this to configuration variables
           // get all defined categories
           foreach ($langcode as $key => $lang) {
             // iso-8859-1
             // $categories_names_array[$lang['id']] = explode($categories_delimiter,$items[$filelayout['v_categories_name_'.$lang['id']]]); 
             // utf-8 
-            $categories_names_array[$lang['id']] = mb_split('\x5e', $items[$filelayout['v_categories_name_' . $lang['id']]]);
+            $categories_names_array[$lang['id']] = mb_split(preg_quote($categories_delimiter), $items[$filelayout['v_categories_name_' . $lang['id']]]);
 
             // get the number of tokens in $categories_names_array[]
             $categories_count[$lang['id']] = count($categories_names_array[$lang['id']]);
@@ -1475,6 +1484,9 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
             } else {
               $v_products_type = 1; // 1 = standard product
             }
+
+            $zco_notifier->notify('EP4_IMPORT_FILE_NEW_PRODUCT_PRODUCT_TYPE');
+
 // mc12345678, new item need to address products_id assignment as it is provided
             $query = "INSERT INTO " . TABLE_PRODUCTS . " SET
 							products_model					= :products_model:,
@@ -1512,9 +1524,11 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
               foreach ($custom_fields as $field) {
                 if ($field != 'products_id' || ( $field == 'products_id' && defined('EP4_DB_FILTER_KEY') && EP4_DB_FILTER_KEY === 'blank_new' && zen_not_null(${$chosen_key}))) {
                   $value = 'v_' . $field;
-                  $query .= ":field: = :value:, ";
-                  $query = $db->bindVars($query, ':field:', $field, 'noquotestring');
-                  $query = $db->bindVars($query, ':value:', ${$value}, 'string');
+                  if ($filelayout[$value]) {
+                    $query .= ":field: = :value:, ";
+                    $query = $db->bindVars($query, ':field:', $field, 'noquotestring');
+                    $query = $db->bindVars($query, ':value:', ${$value}, ('string'));
+                  }
                 }
               }
             }
@@ -1567,8 +1581,8 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
             $query = $db->bindVars($query, ':products_priced_by_attribute:', $v_products_priced_by_attribute, 'string');
             $query = $db->bindVars($query, ':product_is_always_free_shipping:', $v_product_is_always_free_shipping, 'string');
             $query = $db->bindVars($query, ':tax_class_id:', $v_tax_class_id, 'integer');
-            $query = $db->bindVars($query, ':date_avail:', $v_date_avail, 'string');
-            $query = $db->bindVars($query, ':date_added:', $v_date_added, 'string');
+            $query = $db->bindVars($query, ':date_avail:', $v_date_avail, ($v_date_avail == "NULL" ? 'noquotestring' : 'string'));
+            $query = $db->bindVars($query, ':date_added:', $v_date_added, ($v_date_added == "CURRENT_TIMESTAMP" ? 'noquotestring' : 'string'));
             $query = $db->bindVars($query, ':products_quantity:', $v_products_quantity, 'float');
             $query = $db->bindVars($query, ':categories_id:', $v_categories_id, 'integer');
             $query = $db->bindVars($query, ':manufacturers_id:', $v_manufacturers_id, 'integer');
@@ -1660,9 +1674,11 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
             if (count($custom_fields) > 0) {
               foreach ($custom_fields as $field) {
                 $value = 'v_' . $field;
-                $query .= ":field: = :value:, ";
-                $query = $db->bindVars($query, ':field:', $field, 'noquotestring');
-                $query = $db->bindVars($query, ':value:', ${$value}, ( ${$value} == (int)${$value} ? 'integer' : 'string'));
+                if ($filelayout[$value]) {
+                  $query .= ":field: = :value:, ";
+                  $query = $db->bindVars($query, ':field:', $field, 'noquotestring');
+                  $query = $db->bindVars($query, ':value:', ${$value}, 'string');
+                }
               }
             }
             $query .= "products_image			= :products_image:,
@@ -1711,8 +1727,8 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
             $query = $db->bindVars($query, ':products_priced_by_attribute:', $v_products_priced_by_attribute, 'string');
             $query = $db->bindVars($query, ':product_is_always_free_shipping:', $v_product_is_always_free_shipping, 'string');
             $query = $db->bindVars($query, ':tax_class_id:', $v_tax_class_id, 'integer');
-            $query = $db->bindVars($query, ':date_avail:', $v_date_avail, 'string');
-            $query = $db->bindVars($query, ':date_added:', $v_date_added, 'string');
+            $query = $db->bindVars($query, ':date_avail:', $v_date_avail, ($v_date_avail == 'NULL' ? 'noquotestring': 'string'));
+            $query = $db->bindVars($query, ':date_added:', $v_date_added, ($v_date_added == 'CURRENT_TIMESTAMP' ? 'noquotestring': 'string'));
             $query = $db->bindVars($query, ':products_quantity:', $v_products_quantity, 'float');
             $query = $db->bindVars($query, ':categories_id:', $v_categories_id, 'integer');
             $query = $db->bindVars($query, ':manufacturers_id:', $v_manufacturers_id, 'integer');
@@ -1903,9 +1919,15 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
           // the following is common in both the updating an existing product and creating a new product // mc12345678 updated to allow omission of v_products_description in the import file.
     $add_products_description_data = false;
     $zco_notifier->notify('EP4_IMPORT_FILE_PRODUCTS_DESCRIPTION_ADD_OR_CHANGE_DATA');
-    if (isset($v_products_name) || isset($v_products_description) || ($ep_supported_mods['psd'] == true && isset($v_products_short_desc) ) || isset($v_products_url) || $add_products_description_data) { // 
+    if ((isset($v_products_name) && is_array($v_products_name)) || (isset($v_products_description) && is_array
+            ($v_products_description)) ||
+        ($ep_supported_mods['psd'] == true
+            &&
+            isset
+            ($v_products_short_desc) ) || (isset($v_products_url) && is_array($v_products_url)) ||
+        $add_products_description_data) { //
       // Effectively need a way to step through all language options, this section to be "accepted" if there is something to be updated.  Prefer the ability to verify update need without having to loop on anything, but just by "presence" of information.
-      foreach ($languages as $lang) {
+      foreach ($langcode as $lang) {
         // foreach ($v_products_name as $key => $name) {  // Decouple the dependency on the products_name being imported to update the products_name, description, short description and/or URL. //mc12345678 2015-Dec-12
         $lang_id = $lang['id'];
               $sql = "SELECT * FROM " . TABLE_PRODUCTS_DESCRIPTION . " WHERE
@@ -1957,7 +1979,7 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
           $sql = "UPDATE " . TABLE_PRODUCTS_DESCRIPTION . " SET ";
           $update_count = false;
           if (isset($filelayout['v_products_name_' . $lang_id])) {
-            $sql .= " products_name      = :products_name:";
+            $sql .= " products_name      = :v_products_name:";
             $update_count = true;
           }
           if (isset($filelayout['v_products_description_' . $lang_id]) || ( isset($filelayout['v_products_description_' . $lang_id]) && $product_is_new)) {
@@ -1971,7 +1993,8 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
             $sql .= ($update_count ? ", " : "") . " products_url = :v_products_url: ";
             $update_count = true;
           }
-                
+          // If using this notifier to add to the $sql, the when something is added be sure to
+          //  set $update_count = true;
           $zco_notifier->notify('EP4_IMPORT_FILE_PRODUCTS_DESCRIPTION_UPDATE_FIELDS_VALUES');
                 
           $sql .= "        WHERE products_id = :v_products_id: AND language_id = :language_id:";
@@ -1987,10 +2010,14 @@ if (!is_null($_POST['import']) && isset($_POST['import'])) {
           $sql = $db->bindVars($sql, ':language_id:', $lang_id, 'integer');
           $zco_notifier->notify('EP4_IMPORT_FILE_PRODUCTS_DESCRIPTION_FIELDS_BIND_END');
                 
-                $result = ep_4_query($sql);
-                if ($result) {
-                  zen_record_admin_activity('Updated product ' . (int) $v_products_id . ' description via EP4.', 'info');
-                }
+                // Be sure to run the update query only if there has been something provded to
+                //  update.
+                if ($update_count == true) {
+                  $result = ep_4_query($sql);
+                  if ($result) {
+                    zen_record_admin_activity('Updated product ' . (int)$v_products_id . ' description via EP4.', 'info');
+                  }
+                }  // Perform query if there is something to update.
               } // END: already in description, update it
             } // END: foreach on languages
           } // END: Products Descriptions End
@@ -2208,6 +2235,8 @@ $result_incategory = ($ep_uses_mysqli ? mysqli_fetch_array($result_incategory) :
         } // end of row insertion code
       } // end of Mail While Loop
     } // conditional IF statement
+  
+    $zco_notifier->notify('EP4_IMPORT_FILE_PRE_DISPLAY_OUTPUT');
 
 //    $display_output .= '<h3>Finished Processing Import File</h3>';
     $display_output .= EASYPOPULATE_4_DISPLAY_IMPORT_RESULTS_TITLE;

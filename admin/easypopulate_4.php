@@ -1,10 +1,14 @@
 <?php
-// $Id: easypopulate_4.php, v4.0.32 12-30-2015 mc12345678 $
+// $Id: easypopulate_4.php, v4.0.35 04-03-2016 mc12345678 $
 
 // CSV VARIABLES - need to make this configurable in the ADMIN
 // $csv_delimiter = "\t"; // "\t" = tab AND "," = COMMA
 $csv_delimiter = ","; // "\t" = tab AND "," = COMMA
 $csv_enclosure = '"'; // chadd - i think you should always use the '"' for best compatibility
+//$category_delimiter = "^"; //Need to move this to the admin panel
+$category_delimiter = "\x5e"; //Need to move this to the admin panel
+// See https://en.wikipedia.org/wiki/UTF-8 for UTF-8 character encodings
+
 
 $excel_safe_output = true; // this forces enclosure in quotes
 
@@ -74,8 +78,17 @@ $ep_debug_logging_all = false; // do not comment out.. make false instead
 //$sql_fail_test == true; // used to cause an sql error on new product upload - tests error handling & logs
 /* Test area end */
 
+$curver = '4.0.35';
+$message = '';
+if (IS_ADMIN_FLAG) {
+  $new_version_details = plugin_version_check_for_updates(2069, $curver);
+  if ($new_version_details !== FALSE) {
+    $message = '<span class="alert">' . ' - NOTE: A NEW VERSION OF THIS PLUGIN IS AVAILABLE. <a href="' . $new_version_details['link'] . '" target="_blank">[Details]</a>' . '</span>';
+  }
+}
+
 // Current EP Version - Modded by mc12345678 after Chadd had done so much
-$curver              = '4.0.32 - Beta 12-30-2015';
+$curver              = $curver . ' - 04-03-2016' . $message;
 $display_output = ''; // results of import displayed after script run
 $ep_dltype = NULL;
 $ep_stack_sql_error = false; // function returns true on any 1 error, and notifies user of an error
@@ -101,6 +114,27 @@ if (substr($tempdir, 0, 1) == '/') {
 
 //$ep_debug_log_path = DIR_FS_CATALOG . $tempdir;
 $ep_debug_log_path = (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* Storeside */ DIR_FS_CATALOG : /* Admin side */ DIR_FS_ADMIN) . $tempdir;
+
+// Check the current path of the above directory, if the selection is the
+//  store directory, but the path leads into the admin directory, then 
+//  reset the selection to be the admin directory and modify the path so 
+//  that the admin directory is no longer typed into the path.  This same
+//  action occurs in the configuration window now, but this is in case
+//  operation of the program has allowed some other modification to occur
+//  and the database for EP4 has the admin path in it.
+if (EP4_ADMIN_TEMP_DIRECTORY !== 'true') {
+  if (strpos($ep_debug_log_path, DIR_FS_ADMIN) !== false) {
+    $temp_rem = substr($ep_debug_log_path, strlen(DIR_FS_ADMIN));
+    $db->Execute('UPDATE ' . TABLE_CONFIGURATION . ' SET configuration_value = \'true\' where configuration_key = \'EP4_ADMIN_TEMP_DIRECTORY\'', false, false, 0, true);
+    
+    $db->Execute('UPDATE ' . TABLE_CONFIGURATION . ' SET configuration_value = \'' . $temp_rem . '\' WHERE configuration_key = \'EASYPOPULATE_4_CONFIG_TEMP_DIR\'', false, false, 0, true);
+
+    // need a message to  be displayed...
+
+    // Reload the page with the path now reset. No parameters are passed.
+    zen_redirect(zen_href_link(FILENAME_EASYPOPULATE_4));
+  }
+}
 
 if ($ep_debug_logging_all == true) {
   $fp = fopen($ep_debug_log_path . 'ep_debug_log.txt', 'w'); // new blank log file on each page impression for full testing log (too big otherwise!!)
@@ -196,6 +230,9 @@ if (($collation == 'utf8') && ((substr($project, 0, 5) == "1.3.8") || (substr($p
   $artists_name_max_len = $artists_name_max_len / 3;
   $record_company_name_max_len = $record_company_name_max_len / 3;
   $music_genre_name_max_len = $music_genre_name_max_len / 3;
+
+  $zco_notifier->notify('EP4_COLLATION_UTF8_ZC13X');
+
 }
 
 // test for Ajeh
@@ -285,6 +322,7 @@ if (((isset($error) && !$error) || !isset($error)) && (!is_null($_POST["delete"]
     <title><?php echo TITLE; ?></title>
     <link rel="stylesheet" type="text/css" href="includes/stylesheet.css">
     <link rel="stylesheet" type="text/css" href="includes/cssjsmenuhover.css" media="all" id="hoverJS">
+    <?php $zco_notifier->notify('EP4_EASYPOPULATE_4_LINK'); ?>
     <script language="javascript" type="text/javascript" src="includes/menu.js"></script>
     <script language="javascript" type="text/javascript" src="includes/general.js"></script>
     <!-- <script language="javascript" src="includes/ep4ajax.js"></script> -->
@@ -306,7 +344,9 @@ if (((isset($error) && !$error) || !isset($error)) && (!is_null($_POST["delete"]
     </style>
   </head>
   <body onLoad="init()">
-       <?php require(DIR_WS_INCLUDES . 'header.php'); ?>
+       <?php require(DIR_WS_INCLUDES . 'header.php'); 
+       $zco_notifier->notify('EP4_ZC155_AFTER_HEADER');
+       ?>
 
     <!-- body -->
     <div style="padding:5px">
@@ -361,6 +401,8 @@ if (((isset($error) && !$error) || !isset($error)) && (!is_null($_POST["delete"]
            echo EASYPOPULATE_4_DISPLAY_STATUS_PRODUCT_CEON . (($ep4CEONURIDoesExist == true) ? '<font color="green">TRUE</font>' : "FALSE") . '<br />';
            echo EASYPOPULATE_4_DISPLAY_STATUS_PRODUCT_DPM . (($ep_supported_mods['dual']) ? '<font color="green">TRUE</font>' : "FALSE") . '<br />';
 
+           $zco_notifier->notify('EP4_DISPLAY_STATUS');
+
            echo "<br /><b><u>" . EASYPOPULATE_4_DISPLAY_USER_DEF_FIELDS . "</u></b><br />";
            $i = 0;
            foreach ($custom_field_names as $field) {
@@ -382,6 +424,7 @@ if (((isset($error) && !$error) || !isset($error)) && (!is_null($_POST["delete"]
            echo 'products_model:' . $products_model_max_len . '<br />';
            echo 'products_name:' . $products_name_max_len . '<br />';
 
+           $zco_notifier->notify('EP4_MAX_LEN');
            /*  // some error checking
              echo '<br /><br />Problem Data: '. mysql_num_rows($ajeh_result);
              echo '<br />Memory Usage: '.memory_get_usage();
@@ -625,13 +668,13 @@ if (((isset($error) && !$error) || !isset($error)) && (!is_null($_POST["delete"]
 
                   echo "<td align=center>" . zen_draw_form('delete_form', basename($_SERVER['SCRIPT_NAME']), /*$parameters = */'', 'post', /*$params =*/ '', $request_type == 'SSL') . zen_draw_hidden_field('delete', urlencode($files[$val[$i]]), /*$parameters = */'') . zen_draw_input_field('delete_button', EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DELETE, /*$parameters = */'', /*$required = */false, /*$type = */'submit') . "</form></td>";
 /*                  echo "<td align=center><a href=\"" . $_SERVER['SCRIPT_NAME'] . "?delete=" . urlencode($files[$val[$i]]) . "\">" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DELETE . "</a></td>";*/
-                  echo "<td align=center><a href=\"" . ($request_type == 'SSL' ? (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* Storeside */ HTTPS_CATALOG_SERVER . DIR_WS_HTTPS_CATALOG : /*Admin Side */ HTTPS_SERVER . DIR_WS_HTTPS_ADMIN) : (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* Storeside */ HTTP_CATALOG_SERVER . DIR_WS_CATALOG : /*Admin Side */ HTTP_SERVER . DIR_WS_ADMIN)) . $tempdir . $files[$val[$i]] . "\" target=_blank>" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DOWNLOAD . "</a></td></tr>\n";
+                  echo "<td align=center><a href=\"" . (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* BOF Storeside */ defined('ENABLE_SSL_CATALOG') && ENABLE_SSL_CATALOG === 'true' ? HTTPS_CATALOG_SERVER . DIR_WS_HTTPS_CATALOG : HTTP_CATALOG_SERVER . DIR_WS_CATALOG /* EOF Storeside */ : /* BOF Adminside */ (defined('ENABLE_SSL_ADMIN') && ENABLE_SSL_ADMIN === 'true' ? (defined('HTTPS_SERVER') ? HTTPS_SERVER : HTTP_SERVER) . (defined('DIR_WS_HTTPS_ADMIN') ? DIR_WS_HTTPS_ADMIN : DIR_WS_ADMIN) : HTTP_SERVER . DIR_WS_ADMIN) /* EOF Adminside */) . $tempdir . $files[$val[$i]] . "\" target=_blank>" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DOWNLOAD . "</a></td></tr>\n";
                 } else {
                   echo "<td>&nbsp;</td>\n";
                   echo "<td>&nbsp;</td>\n";
 //                  echo "<td align=center><a href=\"" . $_SERVER['SCRIPT_NAME'] . "?delete=" . urlencode($files[$val[$i]]) . "\">" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DELETE . "</a></td>";
                   echo "<td align=center>" . zen_draw_form('delete_form', basename($_SERVER['SCRIPT_NAME']), /*$parameters = */'', 'post', /*$params =*/ '', $request_type == 'SSL') . zen_draw_hidden_field('delete', urlencode($files[$val[$i]]), /*$parameters = */'') . zen_draw_input_field('delete_button', EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DELETE, /*$parameters = */'', /*$required = */false, /*$type = */'submit') . "</form></td>";
-                  echo "<td align=center><a href=\"" . ($request_type == 'SSL' ? (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* Storeside */ HTTPS_CATALOG_SERVER . DIR_WS_HTTPS_CATALOG : /*Admin Side */ HTTPS_SERVER . DIR_WS_HTTPS_ADMIN) : (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* Storeside */ HTTP_CATALOG_SERVER . DIR_WS_CATALOG : /*Admin Side */ HTTP_SERVER . DIR_WS_ADMIN)) . $tempdir . $files[$val[$i]] . "\" target=_blank>" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DOWNLOAD . "</a></td></tr>\n";
+                  echo "<td align=center><a href=\"" . (EP4_ADMIN_TEMP_DIRECTORY !== 'true' ? /* BOF Storeside */ defined('ENABLE_SSL_CATALOG') && ENABLE_SSL_CATALOG === 'true' ? HTTPS_CATALOG_SERVER . DIR_WS_HTTPS_CATALOG : HTTP_CATALOG_SERVER . DIR_WS_CATALOG /* EOF Storeside */ : /* BOF Adminside */ (defined('ENABLE_SSL_ADMIN') && ENABLE_SSL_ADMIN === 'true' ? (defined('HTTPS_SERVER') ? HTTPS_SERVER : HTTP_SERVER) . (defined('DIR_WS_HTTPS_ADMIN') ? DIR_WS_HTTPS_ADMIN : DIR_WS_ADMIN) : HTTP_SERVER . DIR_WS_ADMIN) /* EOF Adminside */) . $tempdir . $files[$val[$i]] . "\" target=_blank>" . EASYPOPULATE_4_DISPLAY_EXPORT_FILE_DOWNLOAD . "</a></td></tr>\n";
                 }
               }
             } // End loop within a filetype
